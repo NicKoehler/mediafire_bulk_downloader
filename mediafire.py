@@ -5,17 +5,27 @@ from os import path, makedirs
 from requests import get as gt
 from gazpacho import get, Soup
 
+if len(argv) == 1:
+    print(f"Usage: python {argv[0]} <mediafire_url>")
+    quit()
+
 url = argv[1]
 download_folder = "mediafire download"
-folder_key = findall(r"folder\/([a-zA-Z0-9]+)", url)[0]
+match = findall(r"folder\/([a-zA-Z0-9]+)", url)
 
-base_url = (
-    f"https://www.mediafire.com/api/1.4/folder"
-    f"/get_content.php?r=utga&content_type=files"
-    f"&filter=all&order_by=name&order_direction=asc&chunk=1"
-    f"&version=1.5&folder_key={folder_key}&response_format=json"
-)
+# check if link is valid
+if match:
+    folder_key = match[0]
+else:
+    print("Invalid link.")
+    quit()
 
+    base_url = (
+        f"https://www.mediafire.com/api/1.4/folder"
+        f"/get_content.php?r=utga&content_type=files"
+        f"&filter=all&order_by=name&order_direction=asc&chunk=1"
+        f"&version=1.5&folder_key={folder_key}&response_format=json"
+    )
 
 def main():
 
@@ -27,7 +37,7 @@ def main():
     try:
         data = gt(base_url).json()["response"]["folder_content"]["files"]
     except KeyError:
-        print("Link non valido")
+        print("Invalid link.")
         quit()
 
     threads = []
@@ -51,7 +61,7 @@ def main():
     for thread in threads:
         thread.join()
 
-    print("Download della cartella completato.")
+    print("Folder download completed.")
 
 
 def download(link):
@@ -59,10 +69,10 @@ def download(link):
     used to download direct file links
     """
     filename = link.split("/")[-1]
-    print(f"Sto scaricando {filename}")
+    print(f"Downloading {filename}.")
     with open("/".join([download_folder, filename]), "wb") as f:
         f.write(gt(link).content)
-    print(f"{filename} scaricato.")
+    print(f"{filename} downloaded.")
 
 
 if __name__ == "__main__":
