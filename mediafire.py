@@ -20,12 +20,13 @@ else:
     print("Invalid link.")
     quit()
 
-    base_url = (
-        f"https://www.mediafire.com/api/1.4/folder"
-        f"/get_content.php?r=utga&content_type=files"
-        f"&filter=all&order_by=name&order_direction=asc&chunk=1"
-        f"&version=1.5&folder_key={folder_key}&response_format=json"
-    )
+base_url = (
+    f"https://www.mediafire.com/api/1.4/folder"
+    f"/get_content.php?r=utga&content_type=files"
+    f"&filter=all&order_by=name&order_direction=asc&chunk=1"
+    f"&version=1.5&folder_key={folder_key}&response_format=json"
+)
+
 
 def main():
 
@@ -44,14 +45,7 @@ def main():
 
     # appending a new thread for downloading every link
     for file in data:
-        html = get(file["links"]["normal_download"])
-        soup = Soup(html)
-        link = (
-            soup.find("div", {"class": "download_link"})
-            .find("a", {"class": "input popsok"})
-            .attrs["href"]
-        )
-        threads.append(Thread(target=download, args=(link,)))
+        threads.append(Thread(target=download, args=(file,)))
 
     # starting all threads
     for thread in threads:
@@ -64,10 +58,18 @@ def main():
     print("Folder download completed.")
 
 
-def download(link):
+def download(file):
     """
     used to download direct file links
     """
+
+    html = get(file["links"]["normal_download"])
+    soup = Soup(html)
+    link = (
+        soup.find("div", {"class": "download_link"})
+        .find("a", {"class": "input popsok"})
+        .attrs["href"]
+    )
     filename = link.split("/")[-1]
     print(f"Downloading {filename}.")
     with open("/".join([download_folder, filename]), "wb") as f:
