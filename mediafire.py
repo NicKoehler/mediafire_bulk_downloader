@@ -79,7 +79,7 @@ def download_folder(folder_key, folder_name):
     for thread in threads:
         thread.join()
 
-    print(f"{folder_name} download completed.")
+    print(f"\"{folder_name}\" download completed.")
 
 
 def download(file):
@@ -99,10 +99,10 @@ def download(file):
         .attrs["href"]
     )
     filename = link.split("/")[-1]
-    print(f"Downloading {filename}.")
+    print(f"Downloading \"{filename}\".")
     with open(filename, "wb") as f:
         f.write(gt(link).content)
-    print(f"{filename} downloaded.")
+    print(f"\"{filename}\" downloaded.")
 
 
 if __name__ == "__main__":
