@@ -6,6 +6,7 @@ from requests import get as gt
 from gazpacho import get, Soup
 from gazpacho.utils import HTTPError
 
+
 def main():
 
     if len(argv) == 1:
@@ -13,12 +14,11 @@ def main():
         quit()
 
     url = argv[1]
-    download_folder = "mediafire download"
     match = findall(r"folder\/([a-zA-Z0-9]+)", url)
 
     # check if link is valid
     if match:
-        folder_key = get_folders(match[0])
+        get_folders(match[0])
     else:
         print("Invalid link.")
         quit()
@@ -33,7 +33,6 @@ def files_or_folders(filefolder, folder_key):
     )
 
 
-
 def get_folders(folder_key, folder_name="mediafire download"):
 
     # if the folder not exist, create and enter it
@@ -45,23 +44,26 @@ def get_folders(folder_key, folder_name="mediafire download"):
     download_folder(folder_key, folder_name)
 
     # searching for other folders
-    folder_content = gt(files_or_folders('folders', folder_key)).json()["response"]["folder_content"]
-    
-    # downloading other folders
-    if 'folders' in folder_content:
-        for folder in folder_content['folders']:
-            get_folders(folder['folderkey'], folder['name'])
-            chdir("..")
+    folder_content = gt(files_or_folders("folders", folder_key)).json()["response"][
+        "folder_content"
+    ]
 
+    # downloading other folders
+    if "folders" in folder_content:
+        for folder in folder_content["folders"]:
+            get_folders(folder["folderkey"], folder["name"])
+            chdir("..")
 
 
 def download_folder(folder_key, folder_name):
     # getting all the files
     try:
-        data = gt(files_or_folders('files', folder_key)).json()["response"]["folder_content"]["files"]
+        data = gt(files_or_folders("files", folder_key)).json()["response"][
+            "folder_content"
+        ]["files"]
     except KeyError:
         print("Invalid link.")
-        quit()
+        return
 
     threads = []
 
@@ -78,6 +80,7 @@ def download_folder(folder_key, folder_name):
         thread.join()
 
     print(f"{folder_name} download completed.")
+
 
 def download(file):
     """
