@@ -108,7 +108,9 @@ def download(file):
         .find("a", {"class": "input popsok"})
         .attrs["href"]
     )
-    filename = link.split("/")[-1]
+
+    filename = file["filename"]
+
     print(f"Downloading \"{filename}\".")
     with open(filename, "wb") as f:
         f.write(gt(link).content)
