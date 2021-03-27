@@ -24,11 +24,11 @@ def main():
         quit()
 
 
-def files_or_folders(filefolder, folder_key):
+def files_or_folders(filefolder, folder_key, chunk=1):
     return (
         f"https://www.mediafire.com/api/1.4/folder"
         f"/get_content.php?r=utga&content_type={filefolder}"
-        f"&filter=all&order_by=name&order_direction=asc&chunk=1"
+        f"&filter=all&order_by=name&order_direction=asc&chunk={chunk}"
         f"&version=1.5&folder_key={folder_key}&response_format=json"
     )
 
@@ -57,10 +57,18 @@ def get_folders(folder_key, folder_name="mediafire download"):
 
 def download_folder(folder_key, folder_name):
     # getting all the files
+    chunk = 1
     try:
-        data = gt(files_or_folders("files", folder_key)).json()["response"][
-            "folder_content"
-        ]["files"]
+        r_json = gt(files_or_folders("files", folder_key)).json()
+        data = r_json["response"]["folder_content"]["files"]
+
+        # if there are more than 100 files makes another request
+        # and append the result to data
+        while r_json["response"]["folder_content"]["more_chunks"] == "yes":
+            chunk += 1
+            r_json = gt(files_or_folders("files", folder_key, chunk=chunk)).json()
+            data += r_json["response"]["folder_content"]["files"]
+
     except KeyError:
         print("Invalid link.")
         return
