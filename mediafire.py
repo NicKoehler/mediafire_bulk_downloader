@@ -56,18 +56,20 @@ def get_folders(folder_key, folder_name="mediafire download"):
 
 
 def download_folder(folder_key, folder_name):
-    # getting all the files
-    chunk = 1
-    try:
-        r_json = gt(files_or_folders("files", folder_key)).json()
-        data = r_json["response"]["folder_content"]["files"]
 
+    # getting all the files
+    data = []
+    chunk = 1
+    more_chunks = True
+
+    try:
         # if there are more than 100 files makes another request
         # and append the result to data
-        while r_json["response"]["folder_content"]["more_chunks"] == "yes":
-            chunk += 1
+        while more_chunks:
             r_json = gt(files_or_folders("files", folder_key, chunk=chunk)).json()
+            more_chunks = r_json["response"]["folder_content"]["more_chunks"] == "yes"
             data += r_json["response"]["folder_content"]["files"]
+            chunk += 1
 
     except KeyError:
         print("Invalid link.")
