@@ -1,27 +1,61 @@
-from sys import argv
+#!/usr/bin/env python3
+
 from re import findall
-from threading import Thread
-from os import path, makedirs, chdir
+from time import sleep
+from queue import Queue
 from requests import get as gt
 from gazpacho import get, Soup
+from argparse import ArgumentParser
 from gazpacho.utils import HTTPError
+from os import path, makedirs, remove, chdir
+from threading import BoundedSemaphore, Thread, Event
+
+
+class bcolors:
+    HEADER = "\033[95m"
+    OKBLUE = "\033[94m"
+    OKCYAN = "\033[96m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+
+
+def print_error(link: str):
+    print(
+        f"{bcolors.FAIL}Deleted file or Dangerous File Blocked\n"
+        f"{bcolors.WARNING}Take a look if you want to be sure: {link}{bcolors.ENDC}"
+    )
 
 
 def main():
 
-    if len(argv) == 1:
-        print(f"Usage: python {argv[0]} <mediafire_url>")
-        quit()
+    parser = ArgumentParser(
+        "mediafire_bulk_downloader", usage="python mediafire.py <mediafire_url>"
+    )
 
-    url = argv[1]
-    match = findall(r"folder\/([a-zA-Z0-9]+)", url)
+    parser.add_argument("folder_url", help="The url of the folder to be downloaded")
+    parser.add_argument(
+        "-t",
+        "--threads",
+        help="Number of threads to use",
+        type=int,
+        required=False,
+        default=10,
+    )
+
+    args = parser.parse_args()
+
+    match = findall(r"folder\/([a-zA-Z0-9]+)", args.folder_url)
 
     # check if link is valid
     if match:
-        get_folders(match[0])
+        get_folders(match[0], args.threads)
     else:
-        print("Invalid link.")
-        quit()
+        print(f"{bcolors.FAIL}Invalid link{bcolors.ENDC}")
+        exit(1)
 
 
 def files_or_folders(filefolder, folder_key, chunk=1):
@@ -33,7 +67,7 @@ def files_or_folders(filefolder, folder_key, chunk=1):
     )
 
 
-def get_folders(folder_key, folder_name="mediafire download"):
+def get_folders(folder_key, threads_num, folder_name="mediafire download"):
 
     # if the folder not exist, create and enter it
     if not path.exists(folder_name):
@@ -41,7 +75,7 @@ def get_folders(folder_key, folder_name="mediafire download"):
     chdir(folder_name)
 
     # downloading all the files in the main folder
-    download_folder(folder_key, folder_name)
+    download_folder(folder_key, folder_name, threads_num)
 
     # searching for other folders
     folder_content = gt(files_or_folders("folders", folder_key)).json()["response"][
@@ -55,7 +89,7 @@ def get_folders(folder_key, folder_name="mediafire download"):
             chdir("..")
 
 
-def download_folder(folder_key, folder_name):
+def download_folder(folder_key, folder_name, threads_num):
 
     # getting all the files
     data = []
@@ -72,50 +106,121 @@ def download_folder(folder_key, folder_name):
             chunk += 1
 
     except KeyError:
-        print("Invalid link.")
+        print("Invalid link")
         return
 
-    threads = []
+    event = Event()
+
+    threadLimiter = BoundedSemaphore(threads_num)
+
+    total_threads: list[Thread] = []
 
     # appending a new thread for downloading every link
     for file in data:
-        threads.append(Thread(target=download, args=(file,)))
+        total_threads.append(
+            Thread(
+                target=download,
+                args=(
+                    file,
+                    event,
+                    threadLimiter,
+                ),
+            )
+        )
 
     # starting all threads
-    for thread in threads:
+    for thread in total_threads:
         thread.start()
 
-    # waiting for all threads to finish
-    for thread in threads:
-        thread.join()
+    # handle being interrupted
+    try:
+        while True:
+            if all(not t.is_alive() for t in total_threads):
+                break
+            sleep(0.01)
+    except KeyboardInterrupt:
+        print(f"{bcolors.WARNING}Closing all threads{bcolors.ENDC}")
+        event.set()
+        for thread in total_threads:
+            thread.join()
+        print(f"{bcolors.WARNING}Download interrupted{bcolors.ENDC}")
+        exit(0)
 
-    print(f"\"{folder_name}\" download completed.")
+    print(f"{bcolors.OKGREEN}{bcolors.BOLD}All downloads completed{bcolors.ENDC}")
 
 
-def download(file):
+def download(file: dict, event: Event, limiter: BoundedSemaphore):
     """
     used to download direct file links
     """
+
+    limiter.acquire()
+
+    if event.is_set():
+        limiter.release()
+        return
+
+    file_link = file["links"]["normal_download"]
+
     try:
-        html = get(file["links"]["normal_download"])
+        html = get(file_link)
     except HTTPError:
-        print("Deleted file or Dangerous File Blocked")
+        print_error(file_link)
+        limiter.release()
         return
 
     soup = Soup(html)
-    link = (
-        soup.find("div", {"class": "download_link"})
-        .find("a", {"class": "input popsok"})
-        .attrs["href"]
-    )
+    try:
+        link = (
+            soup.find("div", {"class": "download_link"})
+            .find("a", {"class": "input popsok"})
+            .attrs["href"]
+        )
+    except Exception:
+        print_error(file_link)
+        limiter.release()
+        return
 
     filename = file["filename"]
 
-    print(f"Downloading \"{filename}\".")
-    with open(filename, "wb") as f:
-        f.write(gt(link).content)
-    print(f"\"{filename}\" downloaded.")
+    if path.exists(filename):
+        print(
+            f"{bcolors.WARNING}{bcolors.BOLD}{filename}{bcolors.ENDC}{bcolors.WARNING} already exists, skipping{bcolors.ENDC}"
+        )
+        limiter.release()
+        return
+
+    print(f"{bcolors.OKBLUE}Downloading {bcolors.BOLD}{filename}{bcolors.ENDC}")
+
+    if event.is_set():
+        limiter.release()
+        return
+
+    with gt(link, stream=True) as r:
+        r.raise_for_status()
+        with open(filename, "wb") as f:
+            for chunk in r.iter_content(chunk_size=4096):
+                if event.is_set():
+                    break
+                if chunk:
+                    f.write(chunk)
+
+    if event.is_set():
+        remove(filename)
+        print(
+            f"{bcolors.WARNING}Deteleted partially downloaded {bcolors.BOLD}{filename}{bcolors.ENDC}"
+        )
+        limiter.release()
+        return
+
+    print(
+        f"{bcolors.OKGREEN}{bcolors.BOLD}{filename}{bcolors.ENDC}{bcolors.OKGREEN} downloaded{bcolors.ENDC}"
+    )
+    limiter.release()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        exit(0)
