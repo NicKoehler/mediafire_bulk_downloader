@@ -41,15 +41,16 @@ def main():
         "-o",
         "--output",
         help="The path of the desired output folder",
-        default="mediafire download",
+        required=False,
+        default=".",
     )
     parser.add_argument(
         "-t",
         "--threads",
         help="Number of threads to use",
         type=int,
-        required=False,
         default=10,
+        required=False,
     )
 
     args = parser.parse_args()
@@ -58,7 +59,7 @@ def main():
 
     # check if link is valid
     if match:
-        get_folders(match[0], args.output, args.threads)
+        get_folders(match[0], args.output, args.threads, first=True)
     else:
         print(f"{bcolors.FAIL}Invalid link{bcolors.ENDC}")
         exit(1)
@@ -66,16 +67,24 @@ def main():
     print(f"{bcolors.OKGREEN}{bcolors.BOLD}All downloads completed{bcolors.ENDC}")
 
 
-def files_or_folders(filefolder, folder_key, chunk=1):
+def files_or_folders(filefolder, folder_key, chunk=1, info=False):
     return (
         f"https://www.mediafire.com/api/1.4/folder"
-        f"/get_content.php?r=utga&content_type={filefolder}"
+        f"/{'get_info' if info else 'get_content'}.php?r=utga&content_type={filefolder}"
         f"&filter=all&order_by=name&order_direction=asc&chunk={chunk}"
         f"&version=1.5&folder_key={folder_key}&response_format=json"
     )
 
 
-def get_folders(folder_key, folder_name, threads_num):
+def get_folders(folder_key, folder_name, threads_num, first=False):
+
+    if first:
+        folder_name = path.join(
+            folder_name,
+            gt(files_or_folders("folder", folder_key, info=True)).json()["response"][
+                "folder_info"
+            ]["name"],
+        )
 
     # if the folder not exist, create and enter it
     if not path.exists(folder_name):
