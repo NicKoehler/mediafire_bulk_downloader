@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import hashlib
 from re import findall
 from time import sleep
 from queue import Queue
@@ -21,6 +22,24 @@ class bcolors:
     ENDC = "\033[0m"
     BOLD = "\033[1m"
     UNDERLINE = "\033[4m"
+
+
+def hash_file(filename: str):
+    # make a hash object
+    h = hashlib.sha256()
+
+    # open file for reading in binary mode
+    with open(filename, "rb") as file:
+
+        # loop till the end of the file
+        chunk = 0
+        while chunk != b"":
+            # read only 1024 bytes at a time
+            chunk = file.read(1024)
+            h.update(chunk)
+
+    # return the hex representation of digest
+    return h.hexdigest()
 
 
 def print_error(link: str):
@@ -199,11 +218,16 @@ def download(file: dict, event: Event, limiter: BoundedSemaphore):
     filename = file["filename"]
 
     if path.exists(filename):
-        print(
-            f"{bcolors.WARNING}{bcolors.BOLD}{filename}{bcolors.ENDC}{bcolors.WARNING} already exists, skipping{bcolors.ENDC}"
-        )
-        limiter.release()
-        return
+        if hash_file(filename) == file["hash"]:
+            print(
+                f"{bcolors.WARNING}{bcolors.BOLD}{filename}{bcolors.ENDC}{bcolors.WARNING} already exists, skipping{bcolors.ENDC}"
+            )
+            limiter.release()
+            return
+        else:
+            print(
+                f"{bcolors.WARNING}{bcolors.BOLD}{filename}{bcolors.ENDC}{bcolors.WARNING} already exists but corrupted, downloading again{bcolors.ENDC}"
+            )
 
     print(f"{bcolors.OKBLUE}Downloading {bcolors.BOLD}{filename}{bcolors.ENDC}")
 
