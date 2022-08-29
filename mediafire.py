@@ -38,6 +38,12 @@ def main():
 
     parser.add_argument("folder_url", help="The url of the folder to be downloaded")
     parser.add_argument(
+        "-o",
+        "--output",
+        help="The path of the desired output folder",
+        default="mediafire download",
+    )
+    parser.add_argument(
         "-t",
         "--threads",
         help="Number of threads to use",
@@ -52,10 +58,12 @@ def main():
 
     # check if link is valid
     if match:
-        get_folders(match[0], args.threads)
+        get_folders(match[0], args.output, args.threads)
     else:
         print(f"{bcolors.FAIL}Invalid link{bcolors.ENDC}")
         exit(1)
+
+    print(f"{bcolors.OKGREEN}{bcolors.BOLD}All downloads completed{bcolors.ENDC}")
 
 
 def files_or_folders(filefolder, folder_key, chunk=1):
@@ -67,7 +75,7 @@ def files_or_folders(filefolder, folder_key, chunk=1):
     )
 
 
-def get_folders(folder_key, threads_num, folder_name="mediafire download"):
+def get_folders(folder_key, folder_name, threads_num):
 
     # if the folder not exist, create and enter it
     if not path.exists(folder_name):
@@ -75,7 +83,7 @@ def get_folders(folder_key, threads_num, folder_name="mediafire download"):
     chdir(folder_name)
 
     # downloading all the files in the main folder
-    download_folder(folder_key, folder_name, threads_num)
+    download_folder(folder_key, threads_num)
 
     # searching for other folders
     folder_content = gt(files_or_folders("folders", folder_key)).json()["response"][
@@ -85,11 +93,11 @@ def get_folders(folder_key, threads_num, folder_name="mediafire download"):
     # downloading other folders
     if "folders" in folder_content:
         for folder in folder_content["folders"]:
-            get_folders(folder["folderkey"], folder["name"])
+            get_folders(folder["folderkey"], folder["name"], threads_num)
             chdir("..")
 
 
-def download_folder(folder_key, folder_name, threads_num):
+def download_folder(folder_key, threads_num):
 
     # getting all the files
     data = []
@@ -143,10 +151,8 @@ def download_folder(folder_key, folder_name, threads_num):
         event.set()
         for thread in total_threads:
             thread.join()
-        print(f"{bcolors.WARNING}Download interrupted{bcolors.ENDC}")
+        print(f"{bcolors.WARNING}{bcolors.BOLD}Download interrupted{bcolors.ENDC}")
         exit(0)
-
-    print(f"{bcolors.OKGREEN}{bcolors.BOLD}All downloads completed{bcolors.ENDC}")
 
 
 def download(file: dict, event: Event, limiter: BoundedSemaphore):
