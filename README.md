@@ -47,6 +47,20 @@ python -m pip install -r requirements.txt
 
 # Usage
 
+Help;
+
+```sh
+python mediafire.py -h
+``` 
+
+Basic usage;
+
 ```sh
 python mediafire.py <FOLDER_URL>
-```
+``` 
+
+With arguments usage;
+
+```sh
+python mediafire.py <FOLDER_URL> -t <THREADS> -o <OUTPUT_PATH>
+``` 
