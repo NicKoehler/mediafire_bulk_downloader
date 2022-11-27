@@ -3,7 +3,6 @@
 import hashlib
 from re import findall
 from time import sleep
-from queue import Queue
 from requests import get as gt
 from gazpacho import get, Soup
 from argparse import ArgumentParser
@@ -54,8 +53,9 @@ def main():
     parser = ArgumentParser(
         "mediafire_bulk_downloader", usage="python mediafire.py <mediafire_url>"
     )
-
-    parser.add_argument("folder_url", help="The url of the folder to be downloaded")
+    parser.add_argument(
+        "mediafire_url", help="The url of the file or folder to be downloaded"
+    )
     parser.add_argument(
         "-o",
         "--output",
@@ -74,19 +74,29 @@ def main():
 
     args = parser.parse_args()
 
-    match = findall(r"folder\/([a-zA-Z0-9]+)", args.folder_url)
+    folder_or_file = findall(
+        r"mediafire\.com/(folder|file)\/([a-zA-Z0-9]+)", args.mediafire_url
+    )
 
-    # check if link is valid
-    if match:
-        get_folders(match[0], args.output, args.threads, first=True)
+    if not folder_or_file:
+        print(f"{bcolors.FAIL}Invalid link{bcolors.ENDC}")
+        exit(1)
+
+    t, key = folder_or_file[0]
+
+    if t == "file":
+        get_file(key, args.output)
+    elif t == "folder":
+        get_folders(key, args.output, args.threads, first=True)
     else:
         print(f"{bcolors.FAIL}Invalid link{bcolors.ENDC}")
         exit(1)
 
     print(f"{bcolors.OKGREEN}{bcolors.BOLD}All downloads completed{bcolors.ENDC}")
+    exit(0)
 
 
-def files_or_folders(filefolder, folder_key, chunk=1, info=False):
+def get_files_or_folders_api_endpoint(filefolder, folder_key, chunk=1, info=False):
     return (
         f"https://www.mediafire.com/api/1.4/folder"
         f"/{'get_info' if info else 'get_content'}.php?r=utga&content_type={filefolder}"
@@ -95,14 +105,18 @@ def files_or_folders(filefolder, folder_key, chunk=1, info=False):
     )
 
 
+def get_info_endpoint(file_key: str):
+    return f"https://www.mediafire.com/api/file/get_info.php?quick_key={file_key}&response_format=json"
+
+
 def get_folders(folder_key, folder_name, threads_num, first=False):
 
     if first:
         folder_name = path.join(
             folder_name,
-            gt(files_or_folders("folder", folder_key, info=True)).json()["response"][
-                "folder_info"
-            ]["name"],
+            gt(
+                get_files_or_folders_api_endpoint("folder", folder_key, info=True)
+            ).json()["response"]["folder_info"]["name"],
         )
 
     # if the folder not exist, create and enter it
@@ -114,9 +128,9 @@ def get_folders(folder_key, folder_name, threads_num, first=False):
     download_folder(folder_key, threads_num)
 
     # searching for other folders
-    folder_content = gt(files_or_folders("folders", folder_key)).json()["response"][
-        "folder_content"
-    ]
+    folder_content = gt(
+        get_files_or_folders_api_endpoint("folders", folder_key)
+    ).json()["response"]["folder_content"]
 
     # downloading other folders
     if "folders" in folder_content:
@@ -136,7 +150,9 @@ def download_folder(folder_key, threads_num):
         # if there are more than 100 files makes another request
         # and append the result to data
         while more_chunks:
-            r_json = gt(files_or_folders("files", folder_key, chunk=chunk)).json()
+            r_json = gt(
+                get_files_or_folders_api_endpoint("files", folder_key, chunk=chunk)
+            ).json()
             more_chunks = r_json["response"]["folder_content"]["more_chunks"] == "yes"
             data += r_json["response"]["folder_content"]["files"]
             chunk += 1
@@ -155,7 +171,7 @@ def download_folder(folder_key, threads_num):
     for file in data:
         total_threads.append(
             Thread(
-                target=download,
+                target=download_file,
                 args=(
                     file,
                     event,
@@ -183,16 +199,27 @@ def download_folder(folder_key, threads_num):
         exit(0)
 
 
-def download(file: dict, event: Event, limiter: BoundedSemaphore):
+def get_file(key: str, output_path: str = None):
+    """
+    downloads a single file in the main thread
+    """
+
+    file_data = gt(get_info_endpoint(key)).json()["response"]["file_info"]
+    if output_path:
+        chdir(output_path)
+    download_file(file_data)
+
+
+def download_file(file: dict, event: Event = None, limiter: BoundedSemaphore = None):
     """
     used to download direct file links
     """
-
-    limiter.acquire()
-
-    if event.is_set():
-        limiter.release()
-        return
+    if limiter:
+        limiter.acquire()
+    if event:
+        if event.is_set():
+            limiter.release()
+            return
 
     file_link = file["links"]["normal_download"]
 
@@ -212,7 +239,8 @@ def download(file: dict, event: Event, limiter: BoundedSemaphore):
         )
     except Exception:
         print_error(file_link)
-        limiter.release()
+        if limiter:
+            limiter.release()
         return
 
     filename = file["filename"]
@@ -222,7 +250,8 @@ def download(file: dict, event: Event, limiter: BoundedSemaphore):
             print(
                 f"{bcolors.WARNING}{bcolors.BOLD}{filename}{bcolors.ENDC}{bcolors.WARNING} already exists, skipping{bcolors.ENDC}"
             )
-            limiter.release()
+            if limiter:
+                limiter.release()
             return
         else:
             print(
@@ -231,31 +260,34 @@ def download(file: dict, event: Event, limiter: BoundedSemaphore):
 
     print(f"{bcolors.OKBLUE}Downloading {bcolors.BOLD}{filename}{bcolors.ENDC}")
 
-    if event.is_set():
-        limiter.release()
-        return
+    if event:
+        if event.is_set():
+            limiter.release()
+            return
 
     with gt(link, stream=True) as r:
         r.raise_for_status()
         with open(filename, "wb") as f:
             for chunk in r.iter_content(chunk_size=4096):
-                if event.is_set():
-                    break
+                if event:
+                    if event.is_set():
+                        break
                 if chunk:
                     f.write(chunk)
-
-    if event.is_set():
-        remove(filename)
-        print(
-            f"{bcolors.WARNING}Deteleted partially downloaded {bcolors.BOLD}{filename}{bcolors.ENDC}"
-        )
-        limiter.release()
-        return
+    if event:
+        if event.is_set():
+            remove(filename)
+            print(
+                f"{bcolors.WARNING}Deteleted partially downloaded {bcolors.BOLD}{filename}{bcolors.ENDC}"
+            )
+            limiter.release()
+            return
 
     print(
         f"{bcolors.OKGREEN}{bcolors.BOLD}{filename}{bcolors.ENDC}{bcolors.OKGREEN} downloaded{bcolors.ENDC}"
     )
-    limiter.release()
+    if limiter:
+        limiter.release()
 
 
 if __name__ == "__main__":

@@ -6,8 +6,8 @@ _A simple tool that bulk downloads entire mediafire folders for free using pytho
 
 ## Table of contents:
 
-- [Installation](#installation)
-- [Usage](#usage)
+-   [Installation](#installation)
+-   [Usage](#usage)
 
 # Installation
 
@@ -47,20 +47,20 @@ python -m pip install -r requirements.txt
 
 # Usage
 
-Help;
+Help
 
 ```sh
 python mediafire.py -h
-``` 
+```
 
-Basic usage;
-
-```sh
-python mediafire.py <FOLDER_URL>
-``` 
-
-With arguments usage;
+Basic usage
 
 ```sh
-python mediafire.py <FOLDER_URL> -t <THREADS> -o <OUTPUT_PATH>
-``` 
+python mediafire.py <MEDIAFIRE_URL>
+```
+
+With arguments usage
+
+```sh
+python mediafire.py <MEDIAFIRE_URL> -t <THREADS> -o <OUTPUT_PATH>
+```
