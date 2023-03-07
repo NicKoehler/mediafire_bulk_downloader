@@ -23,6 +23,12 @@ class bcolors:
     UNDERLINE = "\033[4m"
 
 
+# Non-alphanumeric (str.isalphanum()) characters allowed in a file or folder name
+NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTERS = "-_. "
+# What to replace bad characters with.
+NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTER_REPLACEMENT = "-"
+
+
 def hash_file(filename: str):
     # make a hash object
     h = hashlib.sha256()
@@ -40,6 +46,13 @@ def hash_file(filename: str):
     # return the hex representation of digest
     return h.hexdigest()
 
+def normalize_file_or_folder_name(filename: str):
+    # return filename    # uncomment this line to disable file or folder normalizing. 
+    return "".join([
+        char 
+            if (char.isalnum() or char in NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTERS) else
+        NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTER_REPLACEMENT
+            for char in filename])
 
 def print_error(link: str):
     print(
@@ -114,9 +127,9 @@ def get_folders(folder_key, folder_name, threads_num, first=False):
     if first:
         folder_name = path.join(
             folder_name,
-            gt(
+            normalize_file_or_folder_name(gt(
                 get_files_or_folders_api_endpoint("folder", folder_key, info=True)
-            ).json()["response"]["folder_info"]["name"],
+            ).json()["response"]["folder_info"]["name"]),
         )
 
     # if the folder not exist, create and enter it
@@ -243,7 +256,7 @@ def download_file(file: dict, event: Event = None, limiter: BoundedSemaphore = N
             limiter.release()
         return
 
-    filename = file["filename"]
+    filename = normalize_file_or_folder_name(file["filename"])
 
     if path.exists(filename):
         if hash_file(filename) == file["hash"]:
