@@ -11,6 +11,16 @@ _A simple tool that bulk downloads entire mediafire folders for free using pytho
 
 # Installation
 
+## Installation using pip
+
+```sh
+pip3 install git+https://github.com/NicKoehler/mediafire_bulk_downloader
+# mediafire should now be on $PATH
+mediafire --help
+```
+
+## Manual install
+
 Clone the repository and enter the folder
 
 ```sh
