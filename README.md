@@ -13,7 +13,7 @@ This Python script enables bulk downloading of files and folders from Mediafire.
 2. Navigate into the project directory:
 
     ```bash
-    cd mediafire-bulk-downloader
+    cd mediafire_bulk_downloader
     ```
 
 3. Create a virtual environment (optional but recommended):
