@@ -2,6 +2,12 @@
 
 This Python script enables bulk downloading of files and folders from Mediafire.
 
+## Quick Installation
+
+```bash
+pip install git+https://github.com/NicKoehler/mediafire_bulk_downloader.git
+```
+
 ## Setup
 
 1. Clone the repository to your local machine:
