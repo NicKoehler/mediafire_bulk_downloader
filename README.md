@@ -1,5 +1,7 @@
 # Mediafire Bulk Downloader
 
+⚠ I made a rust async version of this, check it out [HERE](https://github.com/nickoehler/mediafire_rs)! ⚠
+
 This Python script enables bulk downloading of files and folders from Mediafire.
 
 ## Quick Installation
