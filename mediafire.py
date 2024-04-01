@@ -3,8 +3,8 @@
 import hashlib
 from re import findall
 from time import sleep
-from requests import get as gt
-from gazpacho import get, Soup
+from gazpacho import Soup
+from requests import head, get
 from argparse import ArgumentParser
 from gazpacho.utils import HTTPError
 from os import path, makedirs, remove, chdir
@@ -27,11 +27,6 @@ class bcolors:
 NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTERS = "-_. "
 # What to replace bad characters with.
 NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTER_REPLACEMENT = "-"
-# Premium files links downloads directly
-NORMAL_FILE = "https://www.mediafire.com/file/"
-
-import hashlib
-
 
 def hash_file(filename: str) -> str:
     """
@@ -163,7 +158,7 @@ def main():
     args = parser.parse_args()
 
     folder_or_file = findall(
-        r"mediafire\.com/(folder|file)\/([a-zA-Z0-9]+)", args.mediafire_url
+        r"mediafire\.com/(folder|file|file_premium)\/([a-zA-Z0-9]+)", args.mediafire_url
     )
 
     if not folder_or_file:
@@ -172,7 +167,7 @@ def main():
 
     t, key = folder_or_file[0]
 
-    if t == "file":
+    if t in {"file", "file_premium"}:
         get_file(key, args.output)
     elif t == "folder":
         get_folders(key, args.output, args.threads, first=True)
@@ -250,7 +245,7 @@ def get_folders(
         folder_name = path.join(
             folder_name,
             normalize_file_or_folder_name(
-                gt(
+                get(
                     get_files_or_folders_api_endpoint("folder", folder_key, info=True)
                 ).json()["response"]["folder_info"]["name"]
             ),
@@ -265,7 +260,7 @@ def get_folders(
     download_folder(folder_key, threads_num)
 
     # Searching for other folders
-    folder_content = gt(
+    folder_content = get(
         get_files_or_folders_api_endpoint("folders", folder_key)
     ).json()["response"]["folder_content"]
 
@@ -299,7 +294,7 @@ def download_folder(folder_key: str, threads_num: int) -> None:
         # If there are more than 100 files, make another request
         # and append the result to data
         while more_chunks:
-            r_json = gt(
+            r_json = get(
                 get_files_or_folders_api_endpoint("files", folder_key, chunk=chunk)
             ).json()
             more_chunks = r_json["response"]["folder_content"]["more_chunks"] == "yes"
@@ -361,7 +356,7 @@ def get_file(key: str, output_path: str = None) -> None:
         >>> get_file('file_key_123', '/path/to/download')
     """
     # Retrieve file information
-    file_data = gt(get_info_endpoint(key)).json()["response"]["file_info"]
+    file_data = get(get_info_endpoint(key)).json()["response"]["file_info"]
 
     # Change directory if output_path is provided
     if output_path:
@@ -392,42 +387,8 @@ def download_file(
     if limiter:
         limiter.acquire()
 
-    # Check for event and release semaphore if event is set
-    if event:
-        if event.is_set():
-            if limiter:
-                limiter.release()
-            return
-
     # Extract direct download link from file information
-    file_link = file["links"]["normal_download"]
-    download_link = file_link
-
-    if file_link.startswith(NORMAL_FILE):
-        try:
-            # Retrieve the HTML content of the file link
-            html = get(file_link)
-        except HTTPError:
-            # Handle HTTP errors
-            print_error(file_link)
-            if limiter:
-                limiter.release()
-            return
-
-        # Parse HTML content to extract the actual download link
-        soup = Soup(html)
-        try:
-            download_link = (
-                soup.find("div", {"class": "download_link"})
-                .find("a", {"class": "input popsok"})
-                .attrs["href"]
-            )
-        except Exception:
-            # Handle errors in finding or extracting download link
-            print_error(file_link)
-            if limiter:
-                limiter.release()
-            return
+    download_link = file["links"]["normal_download"]
 
     # Normalize filename
     filename = normalize_file_or_folder_name(file["filename"])
@@ -453,8 +414,27 @@ def download_file(
                 limiter.release()
             return
 
+    # Check if the link is not a direct download link and extract the actual download link
+    try:
+        if head(download_link).headers.get("content-encoding") == "gzip":
+            # Retrieve the HTML content of the file link
+            html = get(download_link).text
+            # Parse HTML content to extract the actual download link
+            soup = Soup(html)
+            download_link = (
+                soup.find("div", {"class": "download_link"})
+                .find("a", {"class": "input popsok"})
+                .attrs["href"]
+            )
+    except Exception:
+        # Handle HTTP errors
+        print_error(download_link)
+        if limiter:
+            limiter.release()
+        return
+
     # Download file in chunks
-    with gt(download_link, stream=True) as r:
+    with get(download_link, stream=True) as r:
         r.raise_for_status()
         with open(filename, "wb") as f:
             for chunk in r.iter_content(chunk_size=4096):
