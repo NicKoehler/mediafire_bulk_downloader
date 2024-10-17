@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 
 import hashlib
+import http.client
+import urllib.parse
 from re import findall
 from time import sleep
+from io import BytesIO
+from gzip import GzipFile
+from requests import get
 from gazpacho import Soup
-from requests import head, get
 from argparse import ArgumentParser
-from gazpacho.utils import HTTPError
 from os import path, makedirs, remove, chdir
 from threading import BoundedSemaphore, Thread, Event
 
@@ -27,6 +30,12 @@ class bcolors:
 NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTERS = "-_. "
 # What to replace bad characters with.
 NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTER_REPLACEMENT = "-"
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
+    "Accept-Encoding": "gzip",
+}
+
 
 def hash_file(filename: str) -> str:
     """
@@ -78,9 +87,14 @@ def normalize_file_or_folder_name(filename: str) -> str:
     """
     return "".join(
         [
-            char
-            if (char.isalnum() or char in NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTERS)
-            else NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTER_REPLACEMENT
+            (
+                char
+                if (
+                    char.isalnum()
+                    or char in NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTERS
+                )
+                else NON_ALPHANUM_FILE_OR_FOLDER_NAME_CHARACTER_REPLACEMENT
+            )
             for char in filename
         ]
     )
@@ -242,13 +256,15 @@ def get_folders(
         >>> get_folders('folder_key_123', '/path/to/download', 5, first=True)
     """
     if first:
+        r = get(get_files_or_folders_api_endpoint("folder", folder_key, info=True))
+        if r.status_code != 200:
+            message = r.json()["response"]["message"]
+            print(f"{bcolors.FAIL}{message}{bcolors.ENDC}")
+            exit(1)
+
         folder_name = path.join(
             folder_name,
-            normalize_file_or_folder_name(
-                get(
-                    get_files_or_folders_api_endpoint("folder", folder_key, info=True)
-                ).json()["response"]["folder_info"]["name"]
-            ),
+            normalize_file_or_folder_name(r.json()["response"]["folder_info"]["name"]),
         )
 
     # If the folder doesn't exist, create and enter it
@@ -414,46 +430,64 @@ def download_file(
                 limiter.release()
             return
 
+    parsed_url = urllib.parse.urlparse(download_link)
+
+    conn = http.client.HTTPConnection(parsed_url.netloc)
+    conn.request(
+        "GET",
+        parsed_url.path,
+        headers=HEADERS,
+    )
+
+    response = conn.getresponse()
+
     # Check if the link is not a direct download link and extract the actual download link
-    try:
-        if head(download_link).headers.get("content-encoding") == "gzip":
-            # Retrieve the HTML content of the file link
-            html = get(download_link).text
+    if response.getheader("Content-Encoding") == "gzip":
+        compressed_data = response.read()
+        conn.close()
+        with GzipFile(fileobj=BytesIO(compressed_data)) as f:
+            html = f.read().decode("utf-8")
+
             # Parse HTML content to extract the actual download link
             soup = Soup(html)
-            download_link = (
-                soup.find("div", {"class": "download_link"})
-                .find("a", {"class": "input popsok"})
-                .attrs["href"]
+            download_link = soup.find("a", {"id": "downloadButton"}).attrs["href"]
+            parsed_url = urllib.parse.urlparse(download_link)
+            conn = http.client.HTTPConnection(parsed_url.netloc)
+            conn.request(
+                "GET",
+                parsed_url.path,
+                headers=HEADERS,
             )
-    except Exception:
-        # Handle HTTP errors
+
+            response = conn.getresponse()
+
+    if response.status != 200:
+        conn.close()
         print_error(download_link)
         if limiter:
             limiter.release()
         return
 
-    # Download file in chunks
-    with get(download_link, stream=True) as r:
-        r.raise_for_status()
-        with open(filename, "wb") as f:
-            for chunk in r.iter_content(chunk_size=4096):
-                if event:
-                    if event.is_set():
-                        break
-                if chunk:
-                    f.write(chunk)
+    with open(filename, "wb") as f:
+        while True:
+            chunk = response.read(4096)
 
-    # Check if download was interrupted
-    if event:
-        if event.is_set():
-            remove(filename)
-            print(
-                f"{bcolors.WARNING}Partially downloaded {filename} deleted{bcolors.ENDC}"
-            )
-            if limiter:
-                limiter.release()
-            return
+            # Check if download was interrupted
+            if event and event.is_set():
+                conn.close()
+                f.close()
+                remove(filename)
+                print(
+                    f"{bcolors.WARNING}Partially downloaded {filename} deleted{bcolors.ENDC}"
+                )
+                if limiter:
+                    limiter.release()
+                return
+            if not chunk:
+                break
+            f.write(chunk)
+
+    conn.close()
 
     # Print download success message
     print(f"{bcolors.OKGREEN}{filename}{bcolors.ENDC} downloaded")
