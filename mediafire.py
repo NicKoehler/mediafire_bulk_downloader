@@ -10,7 +10,7 @@ from gzip import GzipFile
 from requests import get
 from gazpacho import Soup
 from argparse import ArgumentParser
-from os import path, makedirs, remove, chdir
+from os import path, makedirs, remove, chdir, getcwd
 from threading import BoundedSemaphore, Thread, Event
 
 
@@ -376,10 +376,18 @@ def get_file(key: str, output_path: str = None) -> None:
 
     # Change directory if output_path is provided
     if output_path:
+        current_dir = getcwd()
+        filename = path.normpath(output_path + "/" + file_data["filename"])
         chdir(output_path)
+    else:
+        filename = file_data["filename"]
 
     # Download the file
     download_file(file_data)
+
+    if output_path:
+        chdir(current_dir)
+    return filename
 
 
 def download_file(
