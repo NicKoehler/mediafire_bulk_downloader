@@ -377,7 +377,7 @@ def get_file(key: str, output_path: str = None) -> None:
     # Change directory if output_path is provided
     if output_path:
         current_dir = getcwd()
-        filename = path.normpath(output_path + "/" + file_data["filename"])
+        filename = path.join(output_path, file_data["filename"])
         chdir(output_path)
     else:
         filename = file_data["filename"]
