@@ -469,7 +469,7 @@ def download_file(
 
             response = conn.getresponse()
 
-    if response.status != 200:
+    if 400 <= response.status < 600:
         conn.close()
         print_error(download_link)
         if limiter:
