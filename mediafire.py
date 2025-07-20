@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import hashlib
 import http.client
 import urllib.parse
@@ -458,8 +459,9 @@ def download_file(
 
             # Parse HTML content to extract the actual download link
             soup = Soup(html)
-            download_link = soup.find("a", {"id": "downloadButton"}).attrs["href"]
-            parsed_url = urllib.parse.urlparse(download_link)
+            base64_data = soup.find("a", {"id": "downloadButton"}).attrs["data-scrambled-url"]
+            decode_base_64_link = base64.b64decode(base64_data).decode("utf-8")
+            parsed_url = urllib.parse.urlparse(decode_base_64_link)
             conn = http.client.HTTPConnection(parsed_url.netloc)
             conn.request(
                 "GET",
